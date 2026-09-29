@@ -166,7 +166,7 @@ export function evaluateTick(
               stock,
               "momentum",
               "Momentum signal",
-              `${stock.symbol} showing strong ${dir} momentum${change >= 0 ? "" : ""} — six consecutive ticks ${rising ? "higher" : "lower"}.`,
+              `${stock.symbol} showing strong ${dir} momentum — six consecutive ticks ${rising ? "higher" : "lower"}.`,
               change !== 0 && Math.abs(change) > 1 ? "high" : "medium",
               now,
             ),
