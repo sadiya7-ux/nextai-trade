@@ -22,7 +22,7 @@ import {
 import type { RangeKey } from "@/lib/market/types";
 import { alertsForSymbol, useNotifications, useWatchlist } from "@/lib/app-state";
 import { buyStock, sellStock, usePortfolio } from "@/lib/trading";
-
+import { checkOrder } from "@/lib/guard";
 const RANGES: RangeKey[] = ["1D", "1W", "1M", "3M", "1Y"];
 
 export default function StockDetails() {
@@ -65,9 +65,21 @@ export default function StockDetails() {
   const total = Number.isFinite(qty) && qty > 0 ? qty * stock.price : 0;
 
   const trade = (which: "BUY" | "SELL") => {
-    setSide(which);
-    const result =
-      which === "BUY" ? buyStock(stock.symbol, qty, stock.price) : sellStock(stock.symbol, qty, stock.price);
+  setSide(which);
+  // ⭐ THE GUARD — checks the order before anything happens
+  const guard = checkOrder({
+    symbol: stock.symbol,
+    side: which,
+    quantity: qty,
+    price: stock.price,
+    cash: portfolio.cash,
+  });
+  if (!guard.allowed) {
+    setFeedback({ ok: false, text: "⛔ " + guard.message });
+    return; // order never executes
+  }
+  const result =
+    which === "BUY" ? buyStock(stock.symbol, qty, stock.price) : sellStock(stock.symbol, qty, stock.price);
     setFeedback(
       result.ok
         ? { ok: true, text: `${which} order filled: ${qty} ${stock.symbol} @ ${formatInr(stock.price)} (paper trade)` }
