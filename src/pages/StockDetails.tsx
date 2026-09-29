@@ -23,12 +23,13 @@ import type { RangeKey } from "@/lib/market/types";
 import { alertsForSymbol, useNotifications, useWatchlist } from "@/lib/app-state";
 import { buyStock, sellStock, usePortfolio } from "@/lib/trading";
 import { checkOrder } from "@/lib/guard";
+import { aiExplain } from "@/lib/ai";
 const RANGES: RangeKey[] = ["1D", "1W", "1M", "3M", "1Y"];
 
 export default function StockDetails() {
   const { symbol = "" } = useParams();
   const market = useMarket();
-  const { alerts } = useNotifications();
+  const { alerts,push } = useNotifications();
   const watchlist = useWatchlist();
   const portfolio = usePortfolio();
 
@@ -67,15 +68,27 @@ export default function StockDetails() {
   const trade = (which: "BUY" | "SELL") => {
   setSide(which);
   // ⭐ THE GUARD — checks the order before anything happens
-  const guard = checkOrder({
+    const guard = checkOrder({
     symbol: stock.symbol,
     side: which,
     quantity: qty,
     price: stock.price,
     cash: portfolio.cash,
+    trades: portfolio.trades,
   });
-  if (!guard.allowed) {
-    setFeedback({ ok: false, text: "⛔ " + guard.message });
+    if (!guard.allowed) {
+    const ai = aiExplain(guard.rule);
+    setFeedback({ ok: false, text: "⛔ " + guard.message + (ai ? " — AI: " + ai : "") });
+    push([{
+      id: crypto.randomUUID(),
+      symbol: stock.symbol,
+      title: "Guard blocked your order",
+      message: guard.message,
+      severity: "high",
+      createdAt: Date.now(),
+      kind: "market",
+      read: false,
+    }]);
     return; // order never executes
   }
   const result =

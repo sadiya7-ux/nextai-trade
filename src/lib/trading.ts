@@ -21,6 +21,7 @@ export interface Trade {
   quantity: number;
   price: number;
   total: number;
+  pnl?: number;
   at: number;
 }
 
@@ -122,6 +123,7 @@ export function sellStock(symbol: string, quantity: number, price: number): Trad
   const h = state.holdings[idx];
   if (quantity > h.quantity) return { ok: false, error: `You only hold ${h.quantity} shares.` };
   const total = round2(quantity * price);
+  const pnl = round2((price - h.avgBuyPrice) * quantity);
   const holdings = [...state.holdings];
   const remaining = h.quantity - quantity;
   if (remaining === 0) holdings.splice(idx, 1);
@@ -133,6 +135,7 @@ export function sellStock(symbol: string, quantity: number, price: number): Trad
     quantity,
     price,
     total,
+    pnl,
     at: Date.now(),
   };
   setPortfolio({ cash: round2(state.cash + total), holdings, trades: [trade, ...state.trades].slice(0, 100) });

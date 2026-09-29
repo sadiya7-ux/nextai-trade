@@ -23,6 +23,7 @@ export function checkOrder(input: {
   quantity: number;
   price: number;
   cash: number;
+  trades?: { side: string; pnl?: number }[];
 }): GuardVerdict {
   const value = input.quantity * input.price;
   const now = Date.now();
@@ -44,7 +45,20 @@ export function checkOrder(input: {
       message: `Not enough cash: you have ₹${input.cash.toLocaleString("en-IN")}, this order needs ₹${value.toLocaleString("en-IN")}.`,
     };
   }
-
+  // Rule 3.5 — ANGER GUARD: 3 losses in a row + betting big
+  const sells = (input.trades ?? []).filter((t) => t.side === "SELL");
+  let streak = 0;
+  for (const t of sells) {
+    if ((t.pnl ?? 0) < 0) streak++;
+    else break;
+  }
+  if (input.side === "BUY" && streak >= 3 && value > 40000) {
+    return {
+      allowed: false,
+      rule: "ANGER",
+      message: `You lost ${streak} trades in a row. This order is ₹${value.toLocaleString("en-IN")} — take a 5-minute break before betting big.`,
+    };
+  }
   // Rule 3 — duplicate within 60 seconds
   if (
     lastApproved.symbol === input.symbol &&
@@ -57,15 +71,17 @@ export function checkOrder(input: {
       message: "You placed this same order less than a minute ago — possible double-click.",
     };
   }
-
-  // Rule 4 — no new buys after 3:10 PM (market closes 3:20)
+  
+   // Rule 4 — market hours only: 9:15 AM – 3:10 PM for new buys
   const t = new Date();
   const minutes = t.getHours() * 60 + t.getMinutes();
-  if (input.side === "BUY" && minutes >= 15 * 60 + 10) {
+  const marketOpen = 9 * 60 + 15;    // 9:15 AM
+  const lastBuyTime = 15 * 60 + 10;  // 3:10 PM
+  if (input.side === "BUY" && (minutes < marketOpen || minutes >= lastBuyTime)) {
     return {
       allowed: false,
       rule: "CLOSING",
-      message: "Market closes at 3:20 PM — no new buys after 3:10 PM.",
+      message: "Market is closed (NSE hours 9:15 AM – 3:20 PM). New buys allowed 9:15 AM – 3:10 PM only.",
     };
   }
 
