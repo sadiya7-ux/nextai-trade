@@ -22,14 +22,14 @@ export interface AgentConfig {
 
 export const DEFAULT_AGENT_CONFIG: AgentConfig = { enabled: true, sensitivity: "medium" };
 
-/** % move thresholds per sensitivity. */
-const MOVE_THRESHOLDS: Record<AgentConfig["sensitivity"], number> = {
+/** % move thresholds per sensitivity. Shared with the AI rule engine. */
+export const MOVE_THRESHOLDS: Record<AgentConfig["sensitivity"], number> = {
   low: 1.2,
   medium: 0.8,
   high: 0.45,
 };
 
-const VOLUME_RATIO_THRESHOLDS: Record<AgentConfig["sensitivity"], number> = {
+export const VOLUME_RATIO_THRESHOLDS: Record<AgentConfig["sensitivity"], number> = {
   low: 1.45,
   medium: 1.25,
   high: 1.1,
