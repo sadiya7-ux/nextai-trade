@@ -33,7 +33,7 @@ export default function Auth() {
     return null;
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async(e: React.FormEvent) => {
     e.preventDefault();
     const err = validate();
     if (err) {
@@ -43,13 +43,15 @@ export default function Auth() {
     setBusy(true);
     setError(null);
     // Simulate a short async auth call so the UI shows intent.
-    window.setTimeout(() => {
-      const result =
-        mode === "signup" ? signUp(name, email, password, remember) : signIn(email, password, remember);
-      setBusy(false);
-      if (result.ok) navigate(destination, { replace: true });
-      else setError(result.error ?? "Something went wrong.");
-    }, 350);
+    window.setTimeout(async () => {
+  const result =
+    mode === "signup"
+      ? await signUp(name, email, password, remember)
+      : await signIn(email, password, remember);
+
+  if (result.ok) navigate(destination, { replace: true });
+  else setError(result.error ?? "Something went wrong.");
+}, 350);
   };
 
   return (
