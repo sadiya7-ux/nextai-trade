@@ -1,5 +1,5 @@
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { Loader2 } from "lucide-react";
 
@@ -34,6 +34,40 @@ export default function Auth() {
         : "login";
 
   const [mode, setMode] = useState<Mode>(initialMode);
+  const [recoveryReady, setRecoveryReady] = useState(false);
+
+useEffect(() => {
+  let mounted = true;
+
+  const initializeRecovery = async () => {
+    const isRecovery =
+      window.location.hash.includes("type=recovery") ||
+      params.get("mode") === "reset";
+
+    if (!isRecovery) {
+      if (mounted) setRecoveryReady(true);
+      return;
+    }
+
+    setMode("reset");
+
+    const { data, error } = await supabase.auth.getSession();
+
+    if (!mounted) return;
+
+    if (error || !data.session) {
+      setError("This reset link is invalid or expired. Please request a new one.");
+    }
+
+    setRecoveryReady(true);
+  };
+
+  void initializeRecovery();
+
+  return () => {
+    mounted = false;
+  };
+}, [params]);
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
