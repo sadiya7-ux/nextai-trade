@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import { formatInr, getMarketStatus } from "./market/engine";
+import { formatInr, getMarketStatus, getSnapshot } from "./market/engine";
 import type { MarketStatus, Stock } from "./market/types";
 
 /**
@@ -57,16 +57,35 @@ export interface Trade {
   pnl?: number;
 }
 
+/**
+ * One recorded portfolio-value snapshot. Points are only ever *recorded*
+ * from now on — no value is ever synthesized for the past.
+ */
+export interface PortfolioSnapshot {
+  /** Epoch ms when this value was observed. */
+  at: number;
+  /** Virtual portfolio value (cash + holdings at live simulated prices). */
+  value: number;
+}
+
 export interface PortfolioState {
   cash: number;
   holdings: Holding[];
   trades: Trade[];
+  /** Recorded value history for the performance chart. Legacy payloads from
+   * older versions have no such field — it is added as `[]` on load, never
+   * backfilled with invented points. */
+  history: PortfolioSnapshot[];
 }
 
 const PORTFOLIO_KEY = "nexttrade.portfolio";
+/** Upper bound on recorded snapshots (oldest pruned) so localStorage stays small. */
+const MAX_HISTORY = 500;
+/** Cadence of opportunistic snapshots while the app is open (browser only). */
+const SNAPSHOT_INTERVAL_MS = 60_000;
 
 function defaultPortfolio(): PortfolioState {
-  return { cash: STARTING_BALANCE, holdings: [], trades: [] };
+  return { cash: STARTING_BALANCE, holdings: [], trades: [], history: [] };
 }
 
 function loadPortfolio(): PortfolioState {
@@ -77,6 +96,12 @@ function loadPortfolio(): PortfolioState {
     if (typeof parsed.cash !== "number" || !Array.isArray(parsed.holdings)) return defaultPortfolio();
     // Only *add* missing fields — never silently reset an existing account.
     if (!Array.isArray(parsed.trades)) parsed.trades = [];
+    const rawHistory = (parsed as { history?: unknown }).history;
+    parsed.history = Array.isArray(rawHistory)
+      ? (rawHistory as PortfolioSnapshot[]).filter(
+          (s) => s && typeof s.at === "number" && typeof s.value === "number",
+        )
+      : [];
     return parsed;
   } catch {
     return defaultPortfolio();
@@ -362,7 +387,7 @@ export function buyStock(symbol: string, quantity: number, price: number, ctx: O
     total,
     at: now,
   };
-  setPortfolio({ cash: round2(state.cash - total), holdings, trades: [trade, ...state.trades].slice(0, 100) });
+  setPortfolio({ ...state, cash: round2(state.cash - total), holdings, trades: [trade, ...state.trades].slice(0, 100) });
   // Record only successful BUYs — failed/rejected orders never count.
   buyTimestamps = [...buyTimestamps.filter((t) => t > now - BUY_RATE_WINDOW_MS), now];
   return { ok: true };
@@ -393,7 +418,7 @@ export function sellStock(symbol: string, quantity: number, price: number, ctx: 
     at: now,
     pnl: round2((price - holding.avgBuyPrice) * quantity),
   };
-  setPortfolio({ cash: round2(state.cash + total), holdings, trades: [trade, ...state.trades].slice(0, 100) });
+  setPortfolio({ ...state, cash: round2(state.cash + total), holdings, trades: [trade, ...state.trades].slice(0, 100) });
   return { ok: true };
 }
 
@@ -435,6 +460,43 @@ export function holdingPnl(h: Holding, price: number) {
   const current = round2(h.quantity * price);
   const pnl = round2(current - invested);
   return { invested, current, pnl, pnlPct: invested > 0 ? (pnl / invested) * 100 : 0 };
+}
+
+// ---------- performance history (recorded snapshots) ----------
+
+/**
+ * Record the current virtual portfolio value (cash + holdings marked to the
+ * live simulated prices) as a history snapshot for the performance chart.
+ *
+ * Honest by construction:
+ *  - only observed values are stored — nothing is interpolated or invented;
+ *  - one point is appended per call, so an idle portfolio still builds a
+ *    truthful (flat) history instead of a fabricated curve;
+ *  - history is capped at MAX_HISTORY entries (oldest pruned).
+ *
+ * Exported so it can be exercised directly (tests) — the app records one
+ * snapshot every SNAPSHOT_INTERVAL_MS while it is open (interval below).
+ */
+export function recordPortfolioSnapshot(now: number = Date.now()): void {
+  const { portfolioValue } = computePortfolio(state.holdings, getSnapshot().stocks);
+  setPortfolio({
+    ...state,
+    history: [...state.history, { at: now, value: portfolioValue }].slice(-MAX_HISTORY),
+  });
+}
+
+// Periodic recording while the app is open. Guarded by `window` so tests and
+// other non-browser runs never start a timer; keyed on globalThis so a dev
+// HMR re-evaluation of this module replaces (not stacks) the previous timer.
+if (typeof window !== "undefined") {
+  const g = globalThis as typeof globalThis & {
+    __nexttradeSnapshotTimer?: ReturnType<typeof setInterval>;
+  };
+  if (g.__nexttradeSnapshotTimer) clearInterval(g.__nexttradeSnapshotTimer);
+  g.__nexttradeSnapshotTimer = setInterval(
+    () => recordPortfolioSnapshot(),
+    SNAPSHOT_INTERVAL_MS,
+  );
 }
 
 /** React hook for components that need reactive portfolio state. */

@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/table";
 import { ChangeIndicator } from "@/components/market/StockRow";
 import { formatInr, getChangePercent, useMarket } from "@/lib/market/engine";
-import { computePortfolio, holdingPnl, resetPortfolio, usePortfolio, STARTING_BALANCE } from "@/lib/trading";
+import { computePortfolio, holdingPnl, resetPortfolio, usePortfolio } from "@/lib/trading";
 import { formatTime } from "@/lib/app-state";
 import { cn } from "@/lib/utils";
 
@@ -30,17 +30,14 @@ export default function Portfolio() {
 
   const todayPnl = rows.reduce((acc, r) => acc + (r.stock ? (r.stock.price - r.stock.previousClose) * r.holding.quantity : 0), 0);
 
-  // Simple performance curve: starting balance drifting to current value.
-  const perf = useMemo(() => {
-    const points = 24;
-    const start = STARTING_BALANCE;
-    const end = computed.portfolioValue;
-    return Array.from({ length: points }, (_, i) => {
-      const t = i / (points - 1);
-      const eased = t * t * (3 - 2 * t);
-      return { time: `${i}`, value: start + (end - start) * eased };
-    });
-  }, [computed.portfolioValue]);
+  // Honest performance curve: only the snapshots actually recorded by the
+  // trading store — nothing is interpolated, no timestamps are fabricated
+  // during render. When fewer than two genuine recordings exist the card
+  // shows an empty state instead of a misleading line.
+  const perf = useMemo(
+    () => portfolio.history.map((s) => ({ time: s.at, value: s.value })),
+    [portfolio.history],
+  );
 
   const stats = [
     { label: "Portfolio value", value: formatInr(computed.portfolioValue) },
@@ -77,10 +74,24 @@ export default function Portfolio() {
       <div className="grid gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-2">
           <CardHeader>
-            <CardTitle>Portfolio performance</CardTitle>
-            <CardDescription>Virtual portfolio value over your trading journey (simulated curve).</CardDescription>
+            <CardTitle>Simulated portfolio history</CardTitle>
+            <CardDescription>
+              Recorded snapshots of your virtual portfolio value as it changes —
+              simulated paper trading, not real performance.
+            </CardDescription>
           </CardHeader>
           <CardContent>
+            {perf.length < 2 ? (
+              <div className="flex h-64 w-full flex-col items-center justify-center px-6 text-center">
+                <p className="text-sm font-medium">No history recorded yet</p>
+                <p className="mt-1 max-w-sm text-xs text-muted-foreground">
+                  Your virtual portfolio value is snapshotted roughly every minute while
+                  the app is open, so genuine history accumulates from now on. Past
+                  values are never invented — the chart appears once at least two
+                  snapshots have been recorded.
+                </p>
+              </div>
+            ) : (
             <div className="h-64 w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={perf} margin={{ top: 8, right: 4, bottom: 0, left: 4 }}>
@@ -100,11 +111,13 @@ export default function Portfolio() {
                       color: "var(--popover-foreground)",
                     }}
                     formatter={(value: number | string) => [formatInr(Number(value)), "Value"]}
+                    labelFormatter={(label: number | string) => `Recorded ${formatTime(Number(label))}`}
                   />
                   <Area type="monotone" dataKey="value" stroke="var(--gold)" strokeWidth={2} fill="url(#perfFill)" dot={false} />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
+            )}
           </CardContent>
         </Card>
 
