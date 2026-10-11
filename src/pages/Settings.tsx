@@ -42,11 +42,11 @@ export default function Settings() {
   const [name, setName] = useState(user?.name ?? "");
   const [saved, setSaved] = useState(false);
 
-  const handleSaveProfile = () => {
-    updateProfile({ name: name.trim() || user?.name });
-    setSaved(true);
-    window.setTimeout(() => setSaved(false), 2000);
-  };
+  const handleSaveProfile = async () => {
+  await updateProfile({ name: name.trim() || user?.name });
+  setSaved(true);
+  window.setTimeout(() => setSaved(false), 2000);
+};
 
   const initials = (user?.name ?? "N T")
     .split(" ")

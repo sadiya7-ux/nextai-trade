@@ -1,129 +1,203 @@
-import type { ReactNode } from "react";
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
 
-/**
- * Local-only mock auth. Keeps the user in localStorage so the session survives
- * reloads ("remember me"). Replace with a real auth provider later; the
- * `useAuth` interface is intentionally small.
- */
+import type { ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
+import type { User as SupabaseUser } from "@supabase/supabase-js";
+import { supabase } from "@/supabaseClient";
 
 export interface User {
   name: string;
   email: string;
   avatarColor: string;
-  password?: string; // stored only in this mock layer
-}
-
-interface StoredAuth {
-  user: User;
-  remember: boolean;
-}
-
-const USERS_KEY = "nexttrade.users";
-const SESSION_KEY = "nexttrade.session";
-
-const AVATAR_COLORS = ["#E9BC3F", "#8FBF6F", "#6FA8BF", "#BF6F8F", "#9F8FBF", "#BF9F6F"];
-
-function readUsers(): User[] {
-  try {
-    const raw = localStorage.getItem(USERS_KEY);
-    return raw ? (JSON.parse(raw) as User[]) : [];
-  } catch {
-    return [];
-  }
-}
-
-function writeUsers(users: User[]) {
-  localStorage.setItem(USERS_KEY, JSON.stringify(users));
-}
-
-function readSession(): StoredAuth | null {
-  try {
-    const raw = localStorage.getItem(SESSION_KEY);
-    return raw ? (JSON.parse(raw) as StoredAuth) : null;
-  } catch {
-    return null;
-  }
+  id: string;
 }
 
 interface AuthContextValue {
   user: User | null;
   isLoading: boolean;
-  signUp: (name: string, email: string, password: string, remember: boolean) => { ok: boolean; error?: string };
-  signIn: (email: string, password: string, remember: boolean) => { ok: boolean; error?: string };
-  signOut: () => void;
-  updateProfile: (patch: { name?: string }) => void;
+  signUp: (
+    name: string,
+    email: string,
+    password: string,
+    remember: boolean
+  ) => Promise<{ ok: boolean; error?: string }>;
+  signIn: (
+    email: string,
+    password: string,
+    remember: boolean
+  ) => Promise<{ ok: boolean; error?: string }>;
+  signOut: () => Promise<void>;
+  updateProfile: (patch: { name?: string }) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
+
+const AVATAR_COLORS = [
+  "#E9BC3F",
+  "#8FBF6F",
+  "#6FA8BF",
+  "#BF6F8F",
+  "#9F8FBF",
+  "#BF9F6F",
+];
+
+function convertUser(user: SupabaseUser): User {
+  return {
+    id: user.id,
+    email: user.email ?? "",
+    name:
+      user.user_metadata?.name ??
+      user.email?.split("@")[0] ??
+      "Trader",
+    avatarColor:
+      AVATAR_COLORS[user.id.charCodeAt(0) % AVATAR_COLORS.length],
+  };
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const session = readSession();
-    if (session?.user) setUser(session.user);
-    setIsLoading(false);
+    supabase.auth.getUser().then(({ data }) => {
+      setUser(data.user ? convertUser(data.user) : null);
+      setIsLoading(false);
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ? convertUser(session.user) : null);
+      setIsLoading(false);
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
-  const value = useMemo<AuthContextValue>(() => {
-    const persist = (u: User, remember: boolean) => {
-      localStorage.setItem(SESSION_KEY, JSON.stringify({ user: u, remember }));
-      setUser(u);
-    };
-
-    return {
+  const value = useMemo<AuthContextValue>(
+    () => ({
       user,
       isLoading,
-      signUp: (name, email, password, remember) => {
-        const users = readUsers();
-        const normalized = email.trim().toLowerCase();
-        if (users.some((u) => u.email === normalized)) {
-          return { ok: false, error: "An account with this email already exists." };
-        }
-        const newUser: User = {
-          name: name.trim() || normalized.split("@")[0],
-          email: normalized,
-          password,
-          avatarColor: AVATAR_COLORS[users.length % AVATAR_COLORS.length],
-        };
-        writeUsers([...users, newUser]);
-        persist(newUser, remember);
-        return { ok: true };
-      },
-      signIn: (email, password, remember) => {
-        const normalized = email.trim().toLowerCase();
-        const users = readUsers();
-        const found = users.find((u) => u.email === normalized);
-        if (!found) return { ok: false, error: "No account found for this email. Sign up first." };
-        if (found.password && found.password !== password) {
-          return { ok: false, error: "Incorrect password." };
-        }
-        persist(found, remember);
-        return { ok: true };
-      },
-      signOut: () => {
-        localStorage.removeItem(SESSION_KEY);
-        setUser(null);
-      },
-      updateProfile: (patch) => {
-        if (!user) return;
-        const updated = { ...user, ...patch };
-        const users = readUsers().map((u) => (u.email === user.email ? updated : u));
-        writeUsers(users);
-        const session = readSession();
-        if (session) persist(updated, session.remember);
-        else setUser(updated);
-      },
-    };
-  }, [user, isLoading]);
 
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+      signUp: async (name, email, password) => {
+        const { data, error } = await supabase.auth.signUp({
+          email: email.trim().toLowerCase(),
+          password,
+          options: {
+            data: {
+              name: name.trim(),
+            },
+          },
+        });
+
+        if (error) {
+          return {
+            ok: false,
+            error: error.message,
+          };
+        }
+
+        if (!data.user) {
+          return {
+            ok: false,
+            error: "Could not create your account.",
+          };
+        }
+
+        return {
+          ok: true,
+        };
+      },
+
+      signIn: async (email, password) => {
+        const { error } = await supabase.auth.signInWithPassword({
+          email: email.trim().toLowerCase(),
+          password,
+        });
+
+        if (error) {
+          return {
+            ok: false,
+            error: error.message,
+          };
+        }
+
+        return {
+          ok: true,
+        };
+      },
+
+      signOut: async () => {
+        await supabase.auth.signOut();
+      },
+
+      updateProfile: async (patch) => {
+        if (!user) return;
+
+        const newName = patch.name?.trim() || user.name;
+
+        // Update the user's name in Supabase Auth
+        const { error: authError } = await supabase.auth.updateUser({
+          data: {
+            name: newName,
+          },
+        });
+
+        if (authError) {
+          console.error(
+            "Failed to update auth profile:",
+            authError
+          );
+          return;
+        }
+
+        // Update the user's name in the profiles table
+        const { error: profileError } = await supabase
+          .from("profiles")
+          .update({
+            name: newName,
+          })
+          .eq("id", user.id);
+
+        if (profileError) {
+          console.error(
+            "Failed to update profiles table:",
+            profileError
+          );
+          return;
+        }
+
+        console.log("Profile updated successfully");
+
+        // Update the website immediately
+        setUser({
+          ...user,
+          name: newName,
+        });
+      },
+    }),
+    [user, isLoading]
+  );
+
+  return (
+    <AuthContext.Provider value={value}>
+      {children}
+    </AuthContext.Provider>
+  );
 }
 
 export function useAuth(): AuthContextValue {
   const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error("useAuth must be used inside AuthProvider");
+
+  if (!ctx) {
+    throw new Error("useAuth must be used inside AuthProvider");
+  }
+
   return ctx;
 }
+

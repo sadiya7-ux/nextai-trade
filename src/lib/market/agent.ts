@@ -22,14 +22,14 @@ export interface AgentConfig {
 
 export const DEFAULT_AGENT_CONFIG: AgentConfig = { enabled: true, sensitivity: "medium" };
 
-/** % move thresholds per sensitivity. */
-const MOVE_THRESHOLDS: Record<AgentConfig["sensitivity"], number> = {
+/** % move thresholds per sensitivity. Shared with the AI rule engine. */
+export const MOVE_THRESHOLDS: Record<AgentConfig["sensitivity"], number> = {
   low: 1.2,
   medium: 0.8,
   high: 0.45,
 };
 
-const VOLUME_RATIO_THRESHOLDS: Record<AgentConfig["sensitivity"], number> = {
+export const VOLUME_RATIO_THRESHOLDS: Record<AgentConfig["sensitivity"], number> = {
   low: 1.45,
   medium: 1.25,
   high: 1.1,
@@ -166,7 +166,7 @@ export function evaluateTick(
               stock,
               "momentum",
               "Momentum signal",
-              `${stock.symbol} showing strong ${dir} momentum${change >= 0 ? "" : ""} — six consecutive ticks ${rising ? "higher" : "lower"}.`,
+              `${stock.symbol} showing strong ${dir} momentum — six consecutive ticks ${rising ? "higher" : "lower"}.`,
               change !== 0 && Math.abs(change) > 1 ? "high" : "medium",
               now,
             ),
