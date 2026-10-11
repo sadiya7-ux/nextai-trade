@@ -29,6 +29,29 @@ The convex server has a separate set of environment variables that are accessibl
 
 Currently, these variables include auth-specific keys: JWKS, JWT_PRIVATE_KEY, and SITE_URL.
 
+### Organizer AI API (optional)
+
+The AI service layer in `src/lib/ai/` reads two optional variables:
+
+- `VITE_AI_API_URL` — base URL of the organizer-provided AI API. Until it is set, the app runs entirely on the local rule-based engine.
+- `VITE_AI_API_KEY` — API credential. Provide it through the platform's Keys/API-keys tab — never commit it to git and never hardcode it in source.
+
+Note: `VITE_*` variables are bundled into the browser code, so treat them as public. When the organizer API goes live, prefer routing requests through a server-side proxy so the key stays private. The `TODO(organizer-*)` markers in `src/lib/ai/remote-client.ts` mark exactly where the endpoint, auth method, and request/response mapping will be connected.
+
+## Trading guardrails (paper trading only)
+
+All orders are validated in one place — `validateOrder()` in `src/lib/trading.ts` — which both the five-step BUY checklist on the stock-details page and the execution path itself run:
+
+- Maximum order value: **₹50,000** per order (quantity × execution price), BUY and SELL.
+- Invalid, zero, negative, or non-finite quantities and prices are rejected.
+- Rolling limit: max **3 successful BUY orders per 60 seconds** across all symbols; failed/rejected orders do not count.
+- After **3 consecutive losing SELL trades**, all BUYs are blocked regardless of stock, quantity, or value — only a completed SELL that is not a loss (break-even or profit) resets the streak, and it is never reset silently.
+- Preserved protections: available-cash validation, duplicate-order protection (identical order within 1 second), market-hours validation (NSE 09:15–15:30 IST, Mon–Fri), quantity/holdings validation.
+- Risky BUYs (AI/rule-based severity medium/high) require an in-app risk notification, the "I understand the risks" confirmation, and a separate "Confirm risky BUY" button — then every hard rule is re-run immediately before execution. Risk confirmations can never override a hard rule.
+
+Starting paper balance: **₹1,00,000** for new accounts. Existing balances and trade history are never reset on startup — `resetPortfolio()` only runs when the user explicitly clicks the button on the Portfolio page.
+
+Tests: `bun test` runs the guardrail and BUY-verification suites in `tests/`.
 
 # Using Authentication (Important!)
 
