@@ -16,7 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useAuth } from "@/lib/local-auth";
-import { supabase } from "@/supabaseClient";
+import { supabase, supabaseConfigError } from "@/supabaseClient";
 
 type Mode = "login" | "signup" | "forgot" | "reset";
 
@@ -34,40 +34,6 @@ export default function Auth() {
         : "login";
 
   const [mode, setMode] = useState<Mode>(initialMode);
-  const [recoveryReady, setRecoveryReady] = useState(false);
-
-useEffect(() => {
-  let mounted = true;
-
-  const initializeRecovery = async () => {
-    const isRecovery =
-      window.location.hash.includes("type=recovery") ||
-      params.get("mode") === "reset";
-
-    if (!isRecovery) {
-      if (mounted) setRecoveryReady(true);
-      return;
-    }
-
-    setMode("reset");
-
-    const { data, error } = await supabase.auth.getSession();
-
-    if (!mounted) return;
-
-    if (error || !data.session) {
-      setError("This reset link is invalid or expired. Please request a new one.");
-    }
-
-    setRecoveryReady(true);
-  };
-
-  void initializeRecovery();
-
-  return () => {
-    mounted = false;
-  };
-}, [params]);
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -78,6 +44,43 @@ useEffect(() => {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // Recovery-link check. When Supabase is not configured we surface the
+  // configuration error instead of throwing an unhandled exception.
+  useEffect(() => {
+    let mounted = true;
+
+    const initializeRecovery = async () => {
+      const isRecovery =
+        window.location.hash.includes("type=recovery") ||
+        params.get("mode") === "reset";
+
+      if (!isRecovery) return;
+
+      setMode("reset");
+
+      if (!supabase) {
+        if (mounted) {
+          setError(supabaseConfigError ?? "Authentication is unavailable.");
+        }
+        return;
+      }
+
+      const { data, error } = await supabase.auth.getSession();
+
+      if (!mounted) return;
+
+      if (error || !data.session) {
+        setError("This reset link is invalid or expired. Please request a new one.");
+      }
+    };
+
+    void initializeRecovery();
+
+    return () => {
+      mounted = false;
+    };
+  }, [params]);
 
   const returnTo = params.get("returnTo");
 
@@ -126,6 +129,12 @@ useEffect(() => {
     setBusy(true);
     setError(null);
     setMessage(null);
+
+    if (!supabase) {
+      setError(supabaseConfigError ?? "Authentication is unavailable.");
+      setBusy(false);
+      return;
+    }
 
     if (mode === "forgot") {
       const trimmedEmail = email.trim().toLowerCase();
@@ -203,9 +212,6 @@ useEffect(() => {
     }
   };
 
-  const showLoginForm =
-    mode === "login" || mode === "signup";
-
   return (
     <div className="flex min-h-screen flex-col bg-background">
       <header className="flex h-16 items-center px-6">
@@ -241,6 +247,23 @@ useEffect(() => {
             </CardHeader>
 
             <CardContent>
+              {supabaseConfigError && (
+                <div
+                  role="alert"
+                  className="mb-4 rounded-lg border border-down/40 bg-down/10 p-3 text-sm leading-5 text-down"
+                >
+                  <p className="font-semibold">Supabase is not configured</p>
+                  <p className="mt-1">{supabaseConfigError}</p>
+                  <p className="mt-1 text-xs">
+                    Set <code>VITE_SUPABASE_URL</code> and{" "}
+                    <code>VITE_SUPABASE_PUBLISHABLE_KEY</code> in this
+                    workspace's <strong>Keys / API keys</strong> tab, then
+                    reload the preview. No credentials are hardcoded — sign-in
+                    stays disabled until they are provided.
+                  </p>
+                </div>
+              )}
+
               <form
                 onSubmit={handleSubmit}
                 className="space-y-4"
@@ -374,7 +397,7 @@ useEffect(() => {
                   type="submit"
                   className="w-full"
                   size="lg"
-                  disabled={busy}
+                  disabled={busy || supabaseConfigError !== null}
                 >
                   {busy && (
                     <Loader2 className="size-4 animate-spin" />

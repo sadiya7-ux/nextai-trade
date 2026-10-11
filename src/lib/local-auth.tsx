@@ -8,7 +8,7 @@ import {
   useState,
 } from "react";
 import type { User as SupabaseUser } from "@supabase/supabase-js";
-import { supabase } from "@/supabaseClient";
+import { supabase, supabaseConfigError } from "@/supabaseClient";
 
 export interface User {
   name: string;
@@ -46,6 +46,11 @@ const AVATAR_COLORS = [
   "#BF9F6F",
 ];
 
+/** Clear, user-facing message when the Supabase env configuration is absent. */
+const configError =
+  supabaseConfigError ??
+  "Authentication is unavailable because Supabase is not configured.";
+
 function convertUser(user: SupabaseUser): User {
   return {
     id: user.id,
@@ -61,9 +66,18 @@ function convertUser(user: SupabaseUser): User {
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  // Unconfigured Supabase ⇒ nothing to load: start as "not loading" so the
+  // effect below never needs a synchronous setState (and the app doesn't sit
+  // in a loading state forever).
+  const [isLoading, setIsLoading] = useState(() => supabase !== null);
 
   useEffect(() => {
+    if (!supabase) {
+      // Not configured: no session, no subscription — the app still renders
+      // and the Auth page shows the configuration notice.
+      return;
+    }
+
     supabase.auth.getUser().then(({ data }) => {
       setUser(data.user ? convertUser(data.user) : null);
       setIsLoading(false);
@@ -85,6 +99,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isLoading,
 
       signUp: async (name, email, password) => {
+        if (!supabase) return { ok: false, error: configError };
+
         const { data, error } = await supabase.auth.signUp({
           email: email.trim().toLowerCase(),
           password,
@@ -115,6 +131,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       },
 
       signIn: async (email, password) => {
+        if (!supabase) return { ok: false, error: configError };
+
         const { error } = await supabase.auth.signInWithPassword({
           email: email.trim().toLowerCase(),
           password,
@@ -133,11 +151,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       },
 
       signOut: async () => {
+        if (!supabase) return;
         await supabase.auth.signOut();
       },
 
       updateProfile: async (patch) => {
-        if (!user) return;
+        if (!supabase || !user) return;
 
         const newName = patch.name?.trim() || user.name;
 

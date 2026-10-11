@@ -11,6 +11,16 @@ interface ImportMetaEnv {
    * Keys/API-keys UI — never hardcode or commit secrets to source control.
    */
   readonly VITE_AI_API_KEY?: string;
+  /**
+   * Supabase project URL. Set it in the Freebuff workspace Keys/API keys tab;
+   * when missing the app shows a configuration notice instead of crashing.
+   */
+  readonly VITE_SUPABASE_URL?: string;
+  /**
+   * Supabase publishable (anon) key. Set it in the Freebuff workspace
+   * Keys/API keys tab — never hardcode or commit it.
+   */
+  readonly VITE_SUPABASE_PUBLISHABLE_KEY?: string;
 }
 
 interface ImportMeta {

@@ -62,6 +62,17 @@ export function useWatchlist() {
         return;
       }
 
+      if (!supabase) {
+        // Supabase not configured — degrade gracefully instead of crashing.
+        console.warn(
+          "[NextTrade] Supabase is not configured — watchlist sync is disabled. " +
+            'Set VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY in the "Keys / API keys" tab.',
+        );
+        setSymbols([]);
+        setLoading(false);
+        return;
+      }
+
       setLoading(true);
 
       const { data, error } = await supabase
@@ -109,7 +120,7 @@ export function useWatchlist() {
   }, [user]);
 
   const add = async (symbol: string) => {
-    if (!user || symbols.includes(symbol)) return;
+    if (!supabase || !user || symbols.includes(symbol)) return;
 
     setSymbols((current) => [...current, symbol]);
 
@@ -125,7 +136,7 @@ export function useWatchlist() {
   };
 
   const remove = async (symbol: string) => {
-    if (!user) return;
+    if (!supabase || !user) return;
 
     setSymbols((current) => current.filter((s) => s !== symbol));
 
